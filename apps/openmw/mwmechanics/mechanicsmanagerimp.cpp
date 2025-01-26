@@ -597,9 +597,9 @@ namespace MWMechanics
         //float buyTerm = 0.01f * (100 - 0.5f * (pcTerm - npcTerm));
         //float sellTerm = 0.01f * (50 - 0.5f * (npcTerm - pcTerm));
 
-        float mercantileScore = playerPtr.getClass().getSkill(playerPtr, ESM::Skill::Mercantile) * playerStats.getFatigueTerm() - ptr.getClass().getSkill(ptr, ESM::Skill::Mercantile) * sellerStats.getFatigueTerm();
-        float personalityScore = playerStats.getAttribute(ESM::Attribute::Personality).getModified() * playerStats.getFatigueTerm() - sellerStats.getAttribute(ESM::Attribute::Personality).getModified() * sellerStats.getFatigueTerm();
-        float luckScore = playerStats.getAttribute(ESM::Attribute::Luck).getModified() * playerStats.getFatigueTerm() - sellerStats.getAttribute(ESM::Attribute::Luck).getModified() * sellerStats.getFatigueTerm();
+        float mercantileScore = playerPtr.getClass().getSkill(playerPtr, ESM::Skill::Mercantile) - ptr.getClass().getSkill(ptr, ESM::Skill::Mercantile);
+        float personalityScore = playerStats.getAttribute(ESM::Attribute::Personality).getModified() - sellerStats.getAttribute(ESM::Attribute::Personality).getModified();
+        float luckScore = playerStats.getAttribute(ESM::Attribute::Luck).getModified() - sellerStats.getAttribute(ESM::Attribute::Luck).getModified();
         float dispositionScore = (clampedDisposition - 50) * 1.5f;
 
         if(mercantileScore > maxDifference)
