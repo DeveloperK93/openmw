@@ -38,7 +38,7 @@ namespace
         float price = static_cast<float>(item.getClass().getValue(item));
         if (item.getClass().hasItemHealth(item))
         {
-            price *= item.getClass().getItemNormalizedHealth(item);
+            price = price/2 * (1 + item.getClass().getItemNormalizedHealth(item));
         }
         return static_cast<int>(price * count);
     }
@@ -65,6 +65,11 @@ namespace
         int a = std::abs(merchantOffer);
         int b = std::abs(playerOffer);
         int d = (buying) ? int(100 * (a - b) / a) : int(100 * (b - a) / b);
+
+        if(buying && std::abs(playerOffer) * 2 < std::abs(merchantOffer))
+            return false;
+        if(!buying && std::abs(playerOffer)  > std::abs(merchantOffer) * 2)
+            return false;
 
         int clampedDisposition = MWBase::Environment::get().getMechanicsManager()->getDerivedDisposition(merchant);
 
