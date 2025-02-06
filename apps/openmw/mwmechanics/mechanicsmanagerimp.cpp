@@ -573,18 +573,55 @@ namespace MWMechanics
 
         // I suppose the temporary disposition change (second param to getDerivedDisposition()) _has_ to be considered
         // here, otherwise one would get different prices when exiting and re-entering the dialogue window...
+    
+        float buyWorst = 4.0f;
+        float buyBest = 2.0f;
+        float sellWorst = 0.25f;
+        float sellBest = 0.5f;
+        float mercantileWeight = 0.6f;
+        float personalityWeight = 0.2f;
+        float luckWeight = 0.1f;
+        float dispositionWeight = 0.1f;
+        int maxDifference = 75;
+        
         int clampedDisposition = getDerivedDisposition(ptr);
-        float a = std::min(playerPtr.getClass().getSkill(playerPtr, ESM::Skill::Mercantile), 100.f);
-        float b = std::min(0.1f * playerStats.getAttribute(ESM::Attribute::Luck).getModified(), 10.f);
-        float c = std::min(0.2f * playerStats.getAttribute(ESM::Attribute::Personality).getModified(), 10.f);
-        float d = std::min(ptr.getClass().getSkill(ptr, ESM::Skill::Mercantile), 100.f);
-        float e = std::min(0.1f * sellerStats.getAttribute(ESM::Attribute::Luck).getModified(), 10.f);
-        float f = std::min(0.2f * sellerStats.getAttribute(ESM::Attribute::Personality).getModified(), 10.f);
-        float pcTerm = (clampedDisposition - 50 + a + b + c) * playerStats.getFatigueTerm();
-        float npcTerm = (d + e + f) * sellerStats.getFatigueTerm();
-        float buyTerm = 0.01f * (100 - 0.5f * (pcTerm - npcTerm));
-        float sellTerm = 0.01f * (50 - 0.5f * (npcTerm - pcTerm));
-        int offerPrice = int(basePrice * (buying ? buyTerm : sellTerm));
+
+        //float a = std::min(playerPtr.getClass().getSkill(playerPtr, ESM::Skill::Mercantile), 100.f);
+        //float b = std::min(0.1f * playerStats.getAttribute(ESM::Attribute::Luck).getModified(), 10.f);
+        //float c = std::min(0.2f * playerStats.getAttribute(ESM::Attribute::Personality).getModified(), 10.f);
+        //float d = std::min(ptr.getClass().getSkill(ptr, ESM::Skill::Mercantile), 100.f);
+        //float e = std::min(0.1f * sellerStats.getAttribute(ESM::Attribute::Luck).getModified(), 10.f);
+        //float f = std::min(0.2f * sellerStats.getAttribute(ESM::Attribute::Personality).getModified(), 10.f);
+        //float pcTerm = (clampedDisposition - 50 + a + b + c) * playerStats.getFatigueTerm();
+        //float npcTerm = (d + e + f) * sellerStats.getFatigueTerm();
+        //float buyTerm = 0.01f * (100 - 0.5f * (pcTerm - npcTerm));
+        //float sellTerm = 0.01f * (50 - 0.5f * (npcTerm - pcTerm));
+
+        float mercantileScore = playerPtr.getClass().getSkill(playerPtr, ESM::Skill::Mercantile) - ptr.getClass().getSkill(ptr, ESM::Skill::Mercantile);
+        float personalityScore = playerStats.getAttribute(ESM::Attribute::Personality).getModified() - sellerStats.getAttribute(ESM::Attribute::Personality).getModified();
+        float luckScore = playerStats.getAttribute(ESM::Attribute::Luck).getModified() - sellerStats.getAttribute(ESM::Attribute::Luck).getModified();
+        float dispositionScore = (clampedDisposition - 50) * 1.5f;
+
+        if(mercantileScore > maxDifference)
+            mercantileScore = maxDifference;
+        else if(mercantileScore < -maxDifference)
+            mercantileScore = -maxDifference;
+        if(personalityScore > maxDifference)
+            personalityScore = maxDifference;
+        else if(personalityScore < -maxDifference)
+            personalityScore = -maxDifference;
+        if(luckScore > maxDifference)
+            luckScore = maxDifference;
+        else if(luckScore < -maxDifference)
+            luckScore = -maxDifference;
+
+        float tradeScore = (mercantileWeight * mercantileScore + personalityWeight * personalityScore + luckWeight * luckScore + dispositionWeight * dispositionScore + maxDifference) / (2 * maxDifference);
+        
+        float buyPrice = buyWorst * basePrice - tradeScore * basePrice * (buyWorst - buyBest);
+        float sellPrice = sellWorst * basePrice + tradeScore * basePrice * (sellBest - sellWorst);
+        
+        int offerPrice = int(buying ? buyPrice : sellPrice);
+        //int offerPrice = int(basePrice * (buying ? buyTerm : sellTerm));
         return std::max(1, offerPrice);
     }
 
