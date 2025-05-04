@@ -213,13 +213,13 @@ namespace MWWorld
         /// unintended behaviour. \attention This function also lists deleted (count 0) objects!
         /// \return Iteration completed?
         template <class Visitor>
-        bool forEach(Visitor&& visitor)
+        bool forEach(Visitor&& visitor, bool includeDeleted = false)
         {
             if (mState != State_Loaded)
                 return false;
 
             if (mMergedRefsNeedsUpdate)
-                updateMergedRefs();
+                updateMergedRefs(includeDeleted);
             if (mMergedRefs.empty())
                 return true;
 
@@ -227,7 +227,7 @@ namespace MWWorld
 
             for (LiveCellRefBase* mergedRef : mMergedRefs)
             {
-                if (!isAccessible(mergedRef->mData, mergedRef->mRef))
+                if (!includeDeleted && !isAccessible(mergedRef->mData, mergedRef->mRef))
                     continue;
 
                 if (!visitor(MWWorld::Ptr(mergedRef, this)))
@@ -242,17 +242,17 @@ namespace MWWorld
         /// unintended behaviour. \attention This function also lists deleted (count 0) objects!
         /// \return Iteration completed?
         template <class Visitor>
-        bool forEachConst(Visitor&& visitor) const
+        bool forEachConst(Visitor&& visitor, bool includeDeleted = false) const
         {
             if (mState != State_Loaded)
                 return false;
 
             if (mMergedRefsNeedsUpdate)
-                updateMergedRefs();
+                updateMergedRefs(includeDeleted);
 
             for (const LiveCellRefBase* mergedRef : mMergedRefs)
             {
-                if (!isAccessible(mergedRef->mData, mergedRef->mRef))
+                if (!includeDeleted && !isAccessible(mergedRef->mData, mergedRef->mRef))
                     continue;
 
                 if (!visitor(MWWorld::ConstPtr(mergedRef, this)))
@@ -267,28 +267,25 @@ namespace MWWorld
         /// unintended behaviour. \attention This function also lists deleted (count 0) objects!
         /// \return Iteration completed?
         template <class T, class Visitor>
-        bool forEachType(Visitor&& visitor)
+        bool forEachType(Visitor&& visitor, bool includeDeleted = false)
         {
             if (mState != State_Loaded)
                 return false;
 
             if (mMergedRefsNeedsUpdate)
-                updateMergedRefs();
+                updateMergedRefs(includeDeleted);
             if (mMergedRefs.empty())
                 return true;
 
             mHasState = true;
 
-            CellRefList<T>& list = get<T>();
-
-            for (typename CellRefList<T>::List::iterator it(list.mList.begin()); it != list.mList.end(); ++it)
+            for (LiveCellRefBase& base : get<T>().mList)
             {
-                LiveCellRefBase* base = &*it;
-                if (mMovedToAnotherCell.find(base) != mMovedToAnotherCell.end())
+                if (mMovedToAnotherCell.contains(&base))
                     continue;
-                if (!isAccessible(base->mData, base->mRef))
+                if (!includeDeleted && !isAccessible(base.mData, base.mRef))
                     continue;
-                if (!visitor(MWWorld::Ptr(base, this)))
+                if (!visitor(MWWorld::Ptr(&base, this)))
                     return false;
             }
 
@@ -406,7 +403,7 @@ namespace MWWorld
 
         /// Repopulate mMergedRefs.
         void requestMergedRefsUpdate();
-        void updateMergedRefs() const;
+        void updateMergedRefs(bool includeDeleted = false) const;
 
         // (item, max charge)
         typedef std::vector<std::pair<LiveCellRefBase*, float>> TRechargingItems;
