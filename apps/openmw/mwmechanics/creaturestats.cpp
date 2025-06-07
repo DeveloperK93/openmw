@@ -403,7 +403,7 @@ namespace MWMechanics
         float base = 1.f;
         const auto& player = world->getPlayerPtr();
         if (this == &player.getClass().getCreatureStats(player))
-            base = world->getStore().get<ESM::GameSetting>().find("fPCbaseMagickaMult")->mValue.getFloat();
+            base = world->getStore().get<ESM::GameSetting>().find("fPCbaseMagickaMult")->mValue.getFloat() + player.getClass().getCreatureStats(player).getLevel()*0.05f;
         else
             base = world->getStore().get<ESM::GameSetting>().find("fNPCbaseMagickaMult")->mValue.getFloat();
 
