@@ -10,6 +10,7 @@
 #include <QPair>
 #include <QProgressDialog>
 #include <QPushButton>
+#include <QTimer>
 
 #include <algorithm>
 #include <mutex>
@@ -159,6 +160,7 @@ Launcher::DataFilesPage::DataFilesPage(const Files::ConfigurationManager& cfg, C
     , mGameSettings(gameSettings)
     , mLauncherSettings(launcherSettings)
     , mNavMeshToolInvoker(new Process::ProcessInvoker(this))
+    , mReloadCellsThread(&DataFilesPage::reloadCells, this)
 {
     ui.setupUi(this);
     setObjectName("DataFilesPage");
@@ -201,8 +203,24 @@ Launcher::DataFilesPage::DataFilesPage(const Files::ConfigurationManager& cfg, C
     // the addons and don't want to get signals of the system doing it during startup.
     connect(mSelector, &ContentSelectorView::ContentSelector::signalAddonDataChanged, this,
         &DataFilesPage::slotAddonDataChanged);
+
+    mReloadCellsTimer = new QTimer(this);
+    mReloadCellsTimer->setSingleShot(true);
+    mReloadCellsTimer->setInterval(200);
+    connect(mReloadCellsTimer, &QTimer::timeout, this, &DataFilesPage::onReloadCellsTimerTimeout);
+
     // Call manually to indicate all changes to addon data during startup.
-    slotAddonDataChanged();
+    onReloadCellsTimerTimeout();
+}
+
+Launcher::DataFilesPage::~DataFilesPage()
+{
+    {
+        const std::lock_guard lock(mReloadCellsMutex);
+        mAbortReloadCells = true;
+        mStartReloadCells.notify_one();
+    }
+    mReloadCellsThread.join();
 }
 
 void Launcher::DataFilesPage::buildView()
@@ -354,15 +372,15 @@ void Launcher::DataFilesPage::populateFileViews(const QString& contentModelName)
 
     QIcon containsDataIcon(":/images/openmw-plugin.png");
 
-    QProgressDialog progressBar("Adding data directories", {}, 0, directories.count(), this);
+    QProgressDialog progressBar("Adding data directories", {}, 0, static_cast<int>(directories.size()), this);
     progressBar.setWindowModality(Qt::WindowModal);
-    progressBar.setValue(0);
 
     std::unordered_set<QString> visitedDirectories;
-    for (const Config::SettingValue& currentDir : directories)
+    for (qsizetype i = 0; i < directories.size(); ++i)
     {
-        progressBar.setValue(progressBar.value() + 1);
+        progressBar.setValue(static_cast<int>(i));
 
+        const Config::SettingValue& currentDir = directories.at(i);
         if (!visitedDirectories.insert(currentDir.value).second)
             continue;
 
@@ -425,6 +443,7 @@ void Launcher::DataFilesPage::populateFileViews(const QString& contentModelName)
         }
         item->setToolTip(tooltip.join('\n'));
     }
+    progressBar.setValue(progressBar.maximum());
     mSelector->sortFiles();
 
     QList<Config::SettingValue> selectedArchives = mGameSettings.getArchiveList();
@@ -990,32 +1009,66 @@ bool Launcher::DataFilesPage::showDeleteMessageBox(const QString& text)
 
 void Launcher::DataFilesPage::slotAddonDataChanged()
 {
-    QStringList selectedFiles = selectedFilePaths();
-    if (previousSelectedFiles != selectedFiles)
+    mReloadCellsTimer->start();
+}
+
+void Launcher::DataFilesPage::onReloadCellsTimerTimeout()
+{
+    const ContentSelectorModel::ContentFileList items = mSelector->selectedFiles();
+    QStringList selectedFiles;
+    for (const ContentSelectorModel::EsmFile* item : items)
+        selectedFiles.append(item->filePath());
+
+    if (mSelectedFiles != selectedFiles)
     {
-        previousSelectedFiles = selectedFiles;
-        // Loading cells for core Morrowind + Expansions takes about 0.2 seconds, which is enough to cause a
-        // barely perceptible UI lag. Splitting into its own thread to alleviate that.
-        std::thread loadCellsThread(&DataFilesPage::reloadCells, this, selectedFiles);
-        loadCellsThread.detach();
+        const std::lock_guard lock(mReloadCellsMutex);
+        mSelectedFiles = std::move(selectedFiles);
+        mReloadCells = true;
+        mStartReloadCells.notify_one();
     }
 }
 
-// Mutex lock to run reloadCells synchronously.
-static std::mutex reloadCellsMutex;
-
-void Launcher::DataFilesPage::reloadCells(QStringList selectedFiles)
+void Launcher::DataFilesPage::reloadCells()
 {
-    // Use a mutex lock so that we can prevent two threads from executing the rest of this code at the same time
-    // Based on https://stackoverflow.com/a/5429695/531762
-    std::unique_lock<std::mutex> lock(reloadCellsMutex);
+    QStringList selectedFiles;
+    std::unique_lock lock(mReloadCellsMutex);
 
-    // The following code will run only if there is not another thread currently running it
-    CellNameLoader cellNameLoader;
-    QSet<QString> set = cellNameLoader.getCellNames(selectedFiles);
-    QStringList cellNamesList(set.begin(), set.end());
-    std::sort(cellNamesList.begin(), cellNamesList.end());
-    emit signalLoadedCellsChanged(cellNamesList);
+    while (true)
+    {
+        mStartReloadCells.wait(lock);
+
+        if (mAbortReloadCells)
+            return;
+
+        if (!std::exchange(mReloadCells, false))
+            continue;
+
+        const QStringList newSelectedFiles = mSelectedFiles;
+
+        lock.unlock();
+
+        QStringList filteredFiles;
+        for (const QString& v : newSelectedFiles)
+            if (QFile::exists(v))
+                filteredFiles.append(v);
+
+        if (selectedFiles != filteredFiles)
+        {
+            selectedFiles = std::move(filteredFiles);
+
+            CellNameLoader cellNameLoader;
+            QSet<QString> set = cellNameLoader.getCellNames(selectedFiles);
+            QStringList cellNamesList(set.begin(), set.end());
+            std::sort(cellNamesList.begin(), cellNamesList.end());
+
+            emit signalLoadedCellsChanged(std::move(cellNamesList));
+        }
+
+        lock.lock();
+
+        if (mAbortReloadCells)
+            return;
+    }
 }
 
 void Launcher::DataFilesPage::startNavMeshTool()
