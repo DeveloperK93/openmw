@@ -25,67 +25,12 @@
 
 #include "draganddrop.hpp"
 #include "inventorywindow.hpp"
-#include "itemmodel.hpp"
-#include "spellicons.hpp"
-
 #include "itemwidget.hpp"
+#include "spellicons.hpp"
+#include "worlditemmodel.hpp"
 
 namespace MWGui
 {
-
-    /**
-     * Makes it possible to use ItemModel::moveItem to move an item from an inventory to the world.
-     */
-    class WorldItemModel : public ItemModel
-    {
-    public:
-        WorldItemModel(float left, float top)
-            : mLeft(left)
-            , mTop(top)
-        {
-        }
-        virtual ~WorldItemModel() override {}
-
-        MWWorld::Ptr dropItemImpl(const ItemStack& item, size_t count, bool copy)
-        {
-            MWBase::World* world = MWBase::Environment::get().getWorld();
-
-            MWWorld::Ptr dropped;
-            if (world->canPlaceObject(mLeft, mTop))
-                dropped = world->placeObject(item.mBase, mLeft, mTop, count, copy);
-            else
-                dropped = world->dropObjectOnGround(world->getPlayerPtr(), item.mBase, count, copy);
-            dropped.getCellRef().setOwner(ESM::RefId());
-
-            return dropped;
-        }
-
-        MWWorld::Ptr addItem(const ItemStack& item, size_t count, bool /*allowAutoEquip*/) override
-        {
-            return dropItemImpl(item, count, false);
-        }
-
-        MWWorld::Ptr copyItem(const ItemStack& item, size_t count, bool /*allowAutoEquip*/) override
-        {
-            return dropItemImpl(item, count, true);
-        }
-
-        void removeItem(const ItemStack& item, size_t count) override
-        {
-            throw std::runtime_error("removeItem not implemented");
-        }
-        ModelIndex getIndex(const ItemStack& item) override { throw std::runtime_error("getIndex not implemented"); }
-        void update() override {}
-        size_t getItemCount() override { return 0; }
-        ItemStack getItem(ModelIndex index) override { throw std::runtime_error("getItem not implemented"); }
-        bool usesContainer(const MWWorld::Ptr&) override { return false; }
-
-    private:
-        // Where to drop the item
-        float mLeft;
-        float mTop;
-    };
-
     HUD::HUD(CustomMarkerCollection& customMarkers, DragAndDrop* dragAndDrop, MWRender::LocalMap* localMapRender)
         : WindowBase("openmw_hud.layout")
         , LocalMapBase(customMarkers, localMapRender, Settings::map().mLocalMapHudFogOfWar)
@@ -243,7 +188,18 @@ namespace MWGui
         mDrowningBar->setVisible(visible);
     }
 
-    void HUD::onWorldClicked(MyGUI::Widget* _sender)
+    void HUD::dropDraggedItem(float mouseX, float mouseY)
+    {
+        if (!mDragAndDrop->mIsOnDragAndDrop)
+            return;
+
+        MWBase::Environment::get().getWorld()->breakInvisibility(MWMechanics::getPlayer());
+
+        WorldItemModel drop(mouseX, mouseY);
+        mDragAndDrop->drop(&drop, nullptr);
+    }
+
+    void HUD::onWorldClicked(MyGUI::Widget* /*sender*/)
     {
         if (!MWBase::Environment::get().getWindowManager()->isGuiMode())
             return;
@@ -251,16 +207,14 @@ namespace MWGui
         MWBase::WindowManager* winMgr = MWBase::Environment::get().getWindowManager();
         if (mDragAndDrop->mIsOnDragAndDrop)
         {
+            const MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
+            const MyGUI::IntPoint cursorPosition = MyGUI::InputManager::getInstance().getMousePosition();
+            const float cursorX = cursorPosition.left / static_cast<float>(viewSize.width);
+            const float cursorY = cursorPosition.top / static_cast<float>(viewSize.height);
+
             // drop item into the gameworld
-            MWBase::Environment::get().getWorld()->breakInvisibility(MWMechanics::getPlayer());
-
-            MyGUI::IntSize viewSize = MyGUI::RenderManager::getInstance().getViewSize();
-            MyGUI::IntPoint cursorPosition = MyGUI::InputManager::getInstance().getMousePosition();
-            float mouseX = cursorPosition.left / float(viewSize.width);
-            float mouseY = cursorPosition.top / float(viewSize.height);
-
-            WorldItemModel drop(mouseX, mouseY);
-            mDragAndDrop->drop(&drop, nullptr);
+            WorldItemModel worldItemModel(cursorX, cursorY);
+            mDragAndDrop->drop(&worldItemModel, nullptr);
 
             winMgr->changePointer("arrow");
         }
@@ -271,7 +225,7 @@ namespace MWGui
             if (!winMgr->isConsoleMode() && (mode != GM_Container) && (mode != GM_Inventory))
                 return;
 
-            MWWorld::Ptr object = MWBase::Environment::get().getWorld()->getFacedObject();
+            MWWorld::Ptr object = MWBase::Environment::get().getWorld()->getFocusObject();
 
             if (winMgr->isConsoleMode())
                 winMgr->setConsoleSelectedObject(object);
@@ -284,7 +238,7 @@ namespace MWGui
         }
     }
 
-    void HUD::onWorldMouseOver(MyGUI::Widget* _sender, int x, int y)
+    void HUD::onWorldMouseOver(MyGUI::Widget* /*sender*/, int x, int y)
     {
         if (mDragAndDrop->mIsOnDragAndDrop)
         {
@@ -312,23 +266,23 @@ namespace MWGui
         }
     }
 
-    void HUD::onWorldMouseLostFocus(MyGUI::Widget* _sender, MyGUI::Widget* _new)
+    void HUD::onWorldMouseLostFocus(MyGUI::Widget* /*sender*/, MyGUI::Widget* newWidget)
     {
         MWBase::Environment::get().getWindowManager()->changePointer("arrow");
         mWorldMouseOver = false;
     }
 
-    void HUD::onHMSClicked(MyGUI::Widget* _sender)
+    void HUD::onHMSClicked(MyGUI::Widget* /*sender*/)
     {
         MWBase::Environment::get().getWindowManager()->toggleVisible(GW_Stats);
     }
 
-    void HUD::onMapClicked(MyGUI::Widget* _sender)
+    void HUD::onMapClicked(MyGUI::Widget* /*sender*/)
     {
         MWBase::Environment::get().getWindowManager()->toggleVisible(GW_Map);
     }
 
-    void HUD::onWeaponClicked(MyGUI::Widget* _sender)
+    void HUD::onWeaponClicked(MyGUI::Widget* /*sender*/)
     {
         const MWWorld::Ptr& player = MWMechanics::getPlayer();
         if (player.getClass().getNpcStats(player).isWerewolf())
@@ -340,7 +294,7 @@ namespace MWGui
         MWBase::Environment::get().getWindowManager()->toggleVisible(GW_Inventory);
     }
 
-    void HUD::onMagicClicked(MyGUI::Widget* _sender)
+    void HUD::onMagicClicked(MyGUI::Widget* /*sender*/)
     {
         const MWWorld::Ptr& player = MWMechanics::getPlayer();
         if (player.getClass().getNpcStats(player).isWerewolf())

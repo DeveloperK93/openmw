@@ -121,7 +121,7 @@ namespace MWWorld
 
         float mSwimHeightScale;
 
-        float mDistanceToFacedObject;
+        float mDistanceToFocusObject;
 
         bool mTeleportEnabled;
         bool mLevitationEnabled;
@@ -152,7 +152,7 @@ namespace MWWorld
 
         void preloadSpells();
 
-        MWWorld::Ptr getFacedObject(float maxDistance, bool ignorePlayer = true);
+        MWWorld::Ptr getFocusObject(float maxDistance, bool ignorePlayer = true);
 
         void PCDropped(const Ptr& item);
 
@@ -317,9 +317,16 @@ namespace MWWorld
 
         void changeWeather(const ESM::RefId& region, const unsigned int id) override;
 
-        int getCurrentWeather() const override;
+        void changeWeather(const ESM::RefId& region, const ESM::RefId& id) override;
 
-        int getNextWeather() const override;
+        const std::vector<MWWorld::Weather>& getAllWeather() const override;
+
+        int getCurrentWeatherScriptId() const override;
+        const MWWorld::Weather& getCurrentWeather() const override;
+        const MWWorld::Weather* getWeather(size_t index) const override;
+        const MWWorld::Weather* getWeather(const ESM::RefId& id) const override;
+        int getNextWeatherScriptId() const override;
+        const MWWorld::Weather* getNextWeather() const override;
 
         float getWeatherTransition() const override;
 
@@ -342,10 +349,10 @@ namespace MWWorld
             bool changeEvent = true) override;
         ///< @param changeEvent If false, do not trigger cell change flag or detect worldspace changes
 
-        MWWorld::Ptr getFacedObject() override;
+        MWWorld::Ptr getFocusObject() override;
         ///< Return pointer to the object the player is looking at, if it is within activation range
 
-        float getDistanceToFacedObject() override;
+        float getDistanceToFocusObject() override;
 
         /// @note No-op for items in containers. Use ContainerStore::removeItem instead.
         void deleteObject(const Ptr& ptr) override;
@@ -412,7 +419,7 @@ namespace MWWorld
         void updatePhysics(
             float duration, bool paused, osg::Timer_t frameStart, unsigned int frameNumber, osg::Stats& stats);
 
-        void updateWindowManager();
+        void updateFocusObject();
 
         MWWorld::Ptr placeObject(
             const MWWorld::Ptr& object, float cursorX, float cursorY, int amount, bool copy = true) override;
@@ -490,7 +497,7 @@ namespace MWWorld
         ///< Apply a health difference to any actors colliding with \a object.
         /// To hurt actors, healthPerSecond should be a positive value. For a negative value, actors will be healed.
 
-        float getWindSpeed() override;
+        float getWindSpeed() const override;
 
         void getContainersOwnedBy(const MWWorld::ConstPtr& npc, std::vector<MWWorld::Ptr>& out) override;
         ///< get all containers in active cells owned by this Npc
@@ -573,8 +580,11 @@ namespace MWWorld
         // Allow NPCs to use torches?
         bool useTorches() const override;
 
+        const osg::Vec4f& getSunLightPosition() const override;
         float getSunVisibility() const override;
         float getSunPercentage() const override;
+
+        float getPhysicsFrameRateDt() const override;
 
         bool findInteriorPositionInWorldSpace(const MWWorld::CellStore* cell, osg::Vec3f& result) override;
 
@@ -599,9 +609,6 @@ namespace MWWorld
 
         /// Spawn a random creature from a levelled list next to the player
         void spawnRandomCreature(const ESM::RefId& creatureList) override;
-
-        /// Spawn a blood effect for \a ptr at \a worldPosition
-        void spawnBloodEffect(const MWWorld::Ptr& ptr, const osg::Vec3f& worldPosition) override;
 
         void spawnEffect(VFS::Path::NormalizedView model, const std::string& textureOverride,
             const osg::Vec3f& worldPos, float scale = 1.f, bool isMagicVFX = true,
@@ -656,8 +663,7 @@ namespace MWWorld
         bool hasCollisionWithDoor(
             const MWWorld::ConstPtr& door, const osg::Vec3f& position, const osg::Vec3f& destination) const override;
 
-        bool isAreaOccupiedByOtherActor(const osg::Vec3f& position, const float radius,
-            std::span<const MWWorld::ConstPtr> ignore, std::vector<MWWorld::Ptr>* occupyingActors) const override;
+        bool isAreaOccupiedByOtherActor(const MWWorld::ConstPtr& actor, const osg::Vec3f& position) const override;
 
         void reportStats(unsigned int frameNumber, osg::Stats& stats) const override;
 

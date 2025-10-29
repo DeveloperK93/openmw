@@ -8,7 +8,7 @@
 #include <components/debug/debuglog.hpp>
 #include <components/resource/imagemanager.hpp>
 
-namespace osgMyGUI
+namespace MyGUIPlatform
 {
 
     OSGTexture::OSGTexture(const std::string& name, Resource::ImageManager* imageManager)
@@ -161,7 +161,7 @@ namespace osgMyGUI
         return nullptr;
     }
 
-    void OSGTexture::setShader(const std::string& _shaderName)
+    void OSGTexture::setShader(const std::string& /*shaderName*/)
     {
         Log(Debug::Warning) << "OSGTexture::setShader is not implemented";
     }

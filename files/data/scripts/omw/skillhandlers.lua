@@ -2,6 +2,7 @@ local self = require('openmw.self')
 local I = require('openmw.interfaces')
 local types = require('openmw.types')
 local core = require('openmw.core')
+local auxUtil = require('openmw_aux.util')
 local NPC = require('openmw.types').NPC
 local Skill = core.stats.Skill
 
@@ -38,6 +39,7 @@ local Skill = core.stats.Skill
 -- Table of all existing sources for skill increases. Any sources not listed below will be treated as equal to Trainer.
 -- @type SkillLevelUpSource
 -- @field #string Book book
+-- @field #string Jail jail
 -- @field #string Trainer trainer
 -- @field #string Usage usage
 
@@ -103,11 +105,7 @@ local function skillUsed(skillid, options)
         end
     end
 
-    for i = #skillUsedHandlers, 1, -1 do
-        if skillUsedHandlers[i](skillid, options) == false then
-            return
-        end
-    end
+    auxUtil.callEventHandlers(skillUsedHandlers, skillid, options)
 end
 
 local function skillLevelUp(skillid, source)
@@ -131,21 +129,19 @@ local function skillLevelUp(skillid, source)
         levelUpAttributeIncreaseValue = core.getGMST('iLevelUpMajorMultAttribute')
     end
 
-    local options = 
-    {
-        skillIncreaseValue = 1,
-        levelUpProgress = levelUpProgress,
-        levelUpAttribute = skillRecord.attribute,
-        levelUpAttributeIncreaseValue = levelUpAttributeIncreaseValue,
-        levelUpSpecialization = skillRecord.specialization,
-        levelUpSpecializationIncreaseValue = core.getGMST('iLevelupSpecialization'),
-    }
-
-    for i = #skillLevelUpHandlers, 1, -1 do
-        if skillLevelUpHandlers[i](skillid, source, options) == false then
-            return
-        end
+    local options = {}
+    if source == 'jail' and not (skillid == 'security' or skillid == 'sneak') then
+        options.skillIncreaseValue = -1
+    else
+        options.skillIncreaseValue = 1
+        options.levelUpProgress = levelUpProgress
+        options.levelUpAttribute = skillRecord.attribute
+        options.levelUpAttributeIncreaseValue = levelUpAttributeIncreaseValue
+        options.levelUpSpecialization = skillRecord.specialization
+        options.levelUpSpecializationIncreaseValue = core.getGMST('iLevelupSpecialization')
     end
+
+    auxUtil.callEventHandlers(skillLevelUpHandlers, skillid, source, options)
 end
 
 return {
@@ -156,8 +152,15 @@ return {
     -- @context local
     -- @usage local I = require('openmw.interfaces')
     --
+    -- -- Make jail time hurt sneak skill instead of benefitting it
+    -- I.SkillProgression.addSkillLevelUpHandler(function(skillid, source, options) 
+    --     if skillid == 'sneak' and source == 'jail' and options.skillIncreaseValue > 0 then
+    --          options.skillIncreaseValue = -options.skillIncreaseValue
+    --     end
+    -- end)
+    --
     -- -- Forbid increasing destruction skill past 50
-    -- I.SkillProgression.addSkillLevelUpHandler(function(skillid, options) 
+    -- I.SkillProgression.addSkillLevelUpHandler(function(skillid, source, options) 
     --     if skillid == 'destruction' and types.NPC.stats.skills.destruction(self).base >= 50 then
     --         return false
     --     end
@@ -187,7 +190,7 @@ return {
         -- a modifiable table of skill level up values, and can be modified to change the behavior of later handlers. 
         -- These values are calculated based on vanilla mechanics. Setting any value to nil will cause that mechanic to be skipped. By default contains these values:
         --
-        --   * `skillIncreaseValue` - The numeric amount of skill levels gained.
+        --   * `skillIncreaseValue` - The numeric amount of skill levels gained. By default this is 1, except when the source is jail in which case it will instead be -1 for all skills except sneak and security.
         --   * `levelUpProgress` - The numeric amount of level up progress gained.
         --   * `levelUpAttribute` - The string identifying the attribute that should receive points from this skill level up.
         --   * `levelUpAttributeIncreaseValue` - The numeric amount of attribute increase points received. This contributes to the amount of each attribute the character receives during a vanilla level up.
@@ -263,7 +266,7 @@ return {
         --- Trigger a skill level up, activating relevant handlers
         -- @function [parent=#SkillProgression] skillLevelUp
         -- @param #string skillid The id of the skill to level up.
-        -- @param #SkillLevelUpSource source The source of the skill increase.
+        -- @param #SkillLevelUpSource source The source of the skill increase. Note that passing a value of @{#SkillLevelUpSource.Jail} will cause a skill decrease for all skills except sneak and security.
         skillLevelUp = skillLevelUp,
         
         --- @{#SkillLevelUpSource}
@@ -272,6 +275,7 @@ return {
             Book = 'book',
             Usage = 'usage',
             Trainer = 'trainer',
+            Jail = 'jail',
         },
         
         --- Compute the total skill gain required to level up a skill based on its current level, and other modifying factors such as major skills and specialization.
